@@ -1,25 +1,25 @@
 <style>
 body {
-	display: grid;
-}
-input[type="range"] {
-	background: linear-gradient(90deg, #00ff00, #ffff00 75%, #ff0000);
-	-webkit-appearance: none;
 	margin: 0;
-    width: 40vw;
-    height: 2vh;
 }
-input[type=range]::-webkit-slider-runnable-track {
-	background: linear-gradient(#00000040, #00000040);
-	background-repeat: no-repeat;
-	background-size: var(--value);
+body > img {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	object-fit: contain;
 }
-input[type='range']::-webkit-slider-thumb {
-	-webkit-appearance: none;
-	background: white;
-    height: 100%;
-    width: .75vw;
-	border-radius: 50%;
+body > dialog > progress {
+	width: 100%;
+}
+body > dialog > input {
+	width: 100%;
+	margin: 0;
+}
+body > dialog > label > input {
+    display: none;
+}
+body > dialog > label > img {
+	max-width: 100%;
 }
 </style>
 <script>
@@ -30,48 +30,55 @@ HTMLElement.prototype.assign = function(source) {
 	return Object.assign(this, source)
 }
 const imgs = {
-	closed: localStorage.getItem('closed') || 'https://i.imgur.com/cmFd26w.png',
-	opened: localStorage.getItem('opened') || 'https://i.imgur.com/IW4KcWv.png'
+	close: 'https://i.imgur.com/eYA59tA.png', // https://i.imgur.com/cmFd26w.png
+	open: 'https://i.imgur.com/aRSu5ux.png' // https://i.imgur.com/IW4KcWv.png
 }
-this.addEventListener('DOMContentLoaded', () => {
-	const img = document.body.create('img')
-	const input = document.body.create('input').assign({
+let avatar
+function main(volume, threshold) {
+	avatar.src = volume < threshold ? imgs.close : imgs.open
+}
+this.addEventListener('DOMContentLoaded', async function() {
+	const dialog = document.body.create('dialog').assign({
+		onclick: e => e.target === dialog && dialog.close()
+	}),
+	progress = dialog.create('progress'),
+	range = dialog.create('input').assign({
 		type: 'range',
 		value: localStorage.getItem('threshold'),
-		onchange() {
-			localStorage.setItem('threshold', this.value)
-		}
+		onchange: e => localStorage.setItem('threshold', e.target.value)
 	})
-	document.body.create('input').assign({
-		type: 'file',
-		accept: 'image/png',
-		onchange() {
-			Object.assign(new FileReader(), {
-				onload () {
-					localStorage.setItem('closed', imgs.closed = this.result)
-				}
-			}).readAsDataURL(this.files[0])
-		}
-	})
-	document.body.create('input').assign({
-		type: 'file',
-		accept: 'image/png',
-		onchange() {
-			Object.assign(new FileReader(), {
-				onload () {
-					localStorage.setItem('opened', imgs.opened = this.result)
-				}
-			}).readAsDataURL(this.files[0])
-		}
+	for (const img in imgs) {
+		const label = dialog.create('label'), image = localStorage.getItem(img)
+		const preview = label.create('img').assign({
+			src: image ? imgs[img] = URL.createObjectURL(await fetch(image).then(r => r.blob())) : imgs[img],
+			title: img,
+			ondragover: e => e.preventDefault() 
+		})
+		const input = label.create('input').assign({
+			type: 'file',
+			accept: 'image/png',
+			onchange() {
+				const [file] = this.files
+				Object.assign(new FileReader(), {
+					onload () {
+						preview.src = imgs[img] = URL.createObjectURL(file)
+						localStorage.setItem(img, this.result)
+					}
+				}).readAsDataURL(file)
+			}
+		})
+		preview.ondrop = e => input.onchange(input.files = e.dataTransfer.files) || e.preventDefault()
+	}
+	avatar = document.body.create('img').assign({
+		onclick: () => dialog.showModal()
 	})
 	navigator.mediaDevices.getUserMedia({audio: true}).then(stream => {
 		const audio = new AudioContext(), analyser = audio.createAnalyser()
 		audio.createMediaStreamSource(stream).connect(analyser)
 		const frequencies = new Uint8Array(analyser.frequencyBinCount)
 		setInterval(() => {
-			const value = Math.floor(analyser.getByteFrequencyData(frequencies) || Math.max(...frequencies) / 255 * 100)
-			input.style.setProperty('--value', value + '%')
-			img.src = value < input.value ? imgs.closed : imgs.opened
+			analyser.getByteFrequencyData(frequencies)
+			main(progress.value = Math.max(...frequencies) / 255, range.value / 100)
 		}, 100)
 	})
 })
